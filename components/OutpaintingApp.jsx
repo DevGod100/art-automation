@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import DragDrop from './DragDrop'
 import ImageProcessor from './ImageProcessor'
+import Gallery from './Gallery'
 
 export default function OutpaintingApp() {
   const [files, setFiles] = useState([])
@@ -17,6 +18,12 @@ export default function OutpaintingApp() {
     setProcessedImages(prev => [...prev, processedImage])
     // Remove from the processing list
     setFiles(prev => prev.filter(file => file.name !== processedImage.originalName))
+  }
+
+  const handleOutpainted = (outpaintedImage) => {
+    setProcessedImages(prev => 
+      prev.map(img => img.id === outpaintedImage.id ? outpaintedImage : img)
+    )
   }
 
   const handleError = (errorMessage, file) => {
@@ -52,29 +59,11 @@ export default function OutpaintingApp() {
         </div>
       )}
       
-      {/* Processed Images Gallery */}
-      {processedImages.length > 0 && (
-        <div className="mt-8">
-          <h2 className="text-xl font-semibold mb-4">Processed Images</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {processedImages.map((image) => (
-              <div key={image.id} className="border rounded overflow-hidden">
-                <img 
-                  src={image.framePath} 
-                  alt={image.originalName}
-                  className="w-full h-auto"
-                />
-                <div className="p-3">
-                  <p className="text-sm">{image.originalName}</p>
-                  <p className="text-xs text-gray-500">
-                    Status: {image.status.replace('_', ' ')}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Gallery */}
+      <Gallery 
+        processedImages={processedImages} 
+        onOutpaint={handleOutpainted} 
+      />
       
       {/* Errors */}
       {errors.length > 0 && (
