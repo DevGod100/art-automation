@@ -3,8 +3,6 @@ import { NextResponse } from 'next/server';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 import fs from 'fs/promises';
-import FormData from 'form-data';
-import fetch from 'node-fetch';
 
 export async function POST(request) {
   try {
@@ -26,39 +24,39 @@ export async function POST(request) {
       );
     }
     
-    // Get the image path
+    // Get the image path and read the image file
     const imagePath = path.join(process.cwd(), 'public', 'outpaints', `${imageId}-frame.png`);
-    
-    // Read the image file
     const imageBuffer = await fs.readFile(imagePath);
     
-    // Create form data for the API request
-    const apiFormData = new FormData();
-    apiFormData.append('image', imageBuffer, { filename: `${imageId}-frame.png` });
+    // Convert image buffer to base64
+    const base64Image = imageBuffer.toString('base64');
     
-    // Add outpaint directions
-    for (const [direction, value] of Object.entries(outpaintDirections)) {
-      if (value > 0) {
-        apiFormData.append(direction, value.toString());
+    // Prepare the request to Stability AI's outpainting endpoint
+    const apiRequestBody = {
+      image: `data:image/png;base64,${base64Image}`,
+      prompt: prompt,
+      outcrop: {
+        left: outpaintDirections.left,
+        right: outpaintDirections.right,
+        top: outpaintDirections.up,
+        bottom: outpaintDirections.down
+      },
+      parameters: {
+        cfg_scale: 7,
+        samples: 1,
+        steps: 30
       }
-    }
-    
-    // Add optional parameters
-    if (prompt) {
-      apiFormData.append('prompt', prompt);
-    }
-    
-    apiFormData.append('output_format', 'webp');  // Since you're using webp
+    };
     
     // Make the API call to Stability AI
-    const response = await fetch('https://api.stability.ai/v2beta/stable-image/edit/outpaint', {
+    const response = await fetch('https://api.stability.ai/v2beta/generation/image-to-image/outpaint', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.STABILITY_API_KEY}`,
-        'Accept': 'application/json',
-        ...apiFormData.getHeaders()
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
-      body: apiFormData
+      body: JSON.stringify(apiRequestBody)
     });
     
     if (!response.ok) {
