@@ -1,123 +1,122 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useState, useCallback } from 'react'
 
-export default function ImageProcessor({ images = [], onUpdateImage, onComplete }) {
-  useEffect(() => {
-    const processNextImage = async () => {
-      // Find the first image that needs processing
-      const imageToProcess = images.find(img => !img.processing && !img.completed)
-      
-      if (!imageToProcess) return
-      
-      try {
-        // Mark as processing and update progress
-        onUpdateImage(imageToProcess.id, { 
-          processing: true,
-          progress: 10 
-        })
-        
-        // 1. First, fit the image into a 1920x1080 frame without cropping
-        const paddedCanvas = await fitImageToFrame(imageToProcess.file)
-        
-        // Update progress
-        onUpdateImage(imageToProcess.id, { progress: 40 })
-        
-        // 2. In a real app, this is where you'd send to Stable Diffusion API
-        // For now, we'll just simulate a delay and use the padded image
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        
-        // Update progress
-        onUpdateImage(imageToProcess.id, { progress: 90 })
-        
-        // Convert canvas to blob for saving
-        const processedBlob = await canvasToBlob(paddedCanvas)
-        
-        // 3. In a real app, save to server and get URL
-        // For now, create a local object URL
-        const resultUrl = URL.createObjectURL(processedBlob)
-        
-        // Mark as completed
-        onUpdateImage(imageToProcess.id, { 
-          processing: false,
-          completed: true,
-          progress: 100,
-          resultUrl
-        })
-        
-        // Notify parent that processing is complete
-        onComplete(imageToProcess.id, { resultUrl })
-        
-      } catch (error) {
-        console.error('Error processing image:', error)
-        onUpdateImage(imageToProcess.id, { 
-          processing: false,
-          error: error.message 
-        })
-      }
-    }
-    
-    // If there are unprocessed images, start processing
-    if (images.some(img => !img.processing && !img.completed)) {
-      processNextImage()
-    }
-  }, [images, onUpdateImage, onComplete])
-  
-  return null // This component doesn't render anything
-}
+export default function ImageProcessor({ file, onProcessed, onError }) {
+  const [progress, setProgress] = useState(0)
 
-// Helper function to fit an image into a 1920x1080 frame without cropping
-async function fitImageToFrame(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      // Create canvas with 1920x1080 dimensions (16:9 aspect ratio)
+  const processImage = useCallback(async () => {
+    if (!file) return
+
+    try {
+      setProgress(10)
+      
+      // Create a new image element from the file
+      const image = new Image()
+      image.src = URL.createObjectURL(file)
+      
+      await new Promise((resolve, reject) => {
+        image.onload = resolve
+        image.onerror = reject
+      })
+      
+      setProgress(30)
+      
+      // Create canvas with target dimensions (1920x1080)
       const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
       canvas.width = 1920
       canvas.height = 1080
-      const ctx = canvas.getContext('2d')
       
-      // Fill with a neutral background color
+      // Calculate scaling and positioning
+      const targetRatio = canvas.width / canvas.height
+      const imageRatio = image.width / image.height
+      
+      let drawWidth, drawHeight, xOffset, yOffset
+      
+      if (imageRatio > targetRatio) {
+        // Image is wider proportionally than target
+        drawHeight = canvas.height
+        drawWidth = image.width * (drawHeight / image.height)
+        xOffset = (canvas.width - drawWidth) / 2
+        yOffset = 0
+      } else {
+        // Image is taller proportionally than target
+        drawWidth = canvas.width
+        drawHeight = image.height * (drawWidth / image.width)
+        xOffset = 0
+        yOffset = (canvas.height - drawHeight) / 2
+      }
+      
+      // Fill canvas with a light gray background
       ctx.fillStyle = '#f0f0f0'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       
-      // Calculate scaling to fit image without cropping
-      const imgRatio = img.width / img.height
-      const canvasRatio = canvas.width / canvas.height
+      // Draw the image centered
+      ctx.drawImage(image, xOffset, yOffset, drawWidth, drawHeight)
       
-      let drawWidth, drawHeight, x, y
+      setProgress(60)
       
-      if (imgRatio > canvasRatio) {
-        // Image is wider than canvas ratio - scale by width
-        drawWidth = canvas.width
-        drawHeight = canvas.width / imgRatio
-        x = 0
-        y = (canvas.height - drawHeight) / 2
-      } else {
-        // Image is taller than canvas ratio - scale by height
-        drawHeight = canvas.height
-        drawWidth = canvas.height * imgRatio
-        x = (canvas.width - drawWidth) / 2
-        y = 0
+      // Convert canvas to blob
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+      
+      // Prepare form data for API submission
+      const formData = new FormData()
+      formData.append('image', blob, file.name)
+      formData.append('originalName', file.name)
+      
+      setProgress(80)
+      
+      // Send to our API endpoint for saving and further processing
+      const response = await fetch('/api/processImage', {
+        method: 'POST',
+        body: formData,
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}`)
       }
       
-      // Draw the image centered in the canvas
-      ctx.drawImage(img, x, y, drawWidth, drawHeight)
+      const result = await response.json()
+      setProgress(100)
       
-      resolve(canvas)
+      // Call the callback with the processed image data
+      onProcessed({
+        id: result.id,
+        originalName: file.name,
+        framePath: result.framePath,
+        originalDimensions: { width: image.width, height: image.height },
+        status: 'ready_for_outpainting',
+        progress: 100
+      })
+      
+      // Clean up
+      URL.revokeObjectURL(image.src)
+      
+    } catch (error) {
+      console.error('Error processing image:', error)
+      onError(error.message)
     }
-    
-    img.onerror = () => reject(new Error('Failed to load image'))
-    
-    img.src = URL.createObjectURL(file)
-  })
-}
+  }, [file, onProcessed, onError])
 
-// Helper function to convert a canvas to a Blob
-function canvasToBlob(canvas) {
-  return new Promise(resolve => {
-    canvas.toBlob(blob => {
-      resolve(blob)
-    }, 'image/png')
-  })
+  // Start processing when component mounts
+  useState(() => {
+    if (file) {
+      processImage()
+    }
+  }, [file, processImage])
+
+  return (
+    <div className="relative w-full">
+      <div className="h-2 w-full bg-gray-200 rounded">
+        <div 
+          className="h-full bg-blue-500 rounded transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        ></div>
+      </div>
+      <div className="text-sm text-gray-600 mt-1">
+        Processing {file?.name}: {progress}%
+      </div>
+    </div>
+  )
 }

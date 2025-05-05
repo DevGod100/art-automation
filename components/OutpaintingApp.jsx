@@ -2,63 +2,96 @@
 
 import { useState } from 'react'
 import DragDrop from './DragDrop'
-import Gallery from './Gallery'
+import ImageProcessor from './ImageProcessor'
 
 export default function OutpaintingApp() {
-  const [processingImages, setProcessingImages] = useState([])
-  const [completedImages, setCompletedImages] = useState([])
-  
-  const handleFilesDrop = (files) => {
-    // Create new image objects for processing
-    const newImages = Array.from(files).map(file => ({
-      id: `${file.name}-${Date.now()}`,  // Unique ID
-      name: file.name,
-      file: file,
-      status: 'Queued',
-      progress: 0,
-      previewUrl: URL.createObjectURL(file)
-    }))
-    
-    // Add to processing queue
-    setProcessingImages(prev => [...newImages, ...prev])
-    
-    // Simulate processing (in a real app, you'd use ImageProcessor)
-    newImages.forEach(image => {
-      // Simulate a delay before marking as complete
-      setTimeout(() => {
-        // Remove from processing
-        setProcessingImages(prev => 
-          prev.filter(img => img.id !== image.id)
-        )
-        
-        // Add to completed with the same preview URL for testing
-        setCompletedImages(prev => [
-          {
-            id: image.id,
-            name: image.name,
-            resultUrl: image.previewUrl
-          },
-          ...prev
-        ])
-      }, 3000) // 3 second delay for testing
-    })
+  const [files, setFiles] = useState([])
+  const [processedImages, setProcessedImages] = useState([])
+  const [errors, setErrors] = useState([])
+
+  const handleFiles = (newFiles) => {
+    setFiles(prev => [...prev, ...newFiles])
   }
-  
+
+  const handleProcessed = (processedImage) => {
+    setProcessedImages(prev => [...prev, processedImage])
+    // Remove from the processing list
+    setFiles(prev => prev.filter(file => file.name !== processedImage.originalName))
+  }
+
+  const handleError = (errorMessage, file) => {
+    setErrors(prev => [...prev, { message: errorMessage, file: file?.name }])
+    // Remove from the processing list if there was a file
+    if (file) {
+      setFiles(prev => prev.filter(f => f.name !== file.name))
+    }
+  }
+
   return (
-    <div className="grid grid-cols-2 min-h-screen">
-      {/* Left side: Drag and drop area */}
-      <div className="border-r border-gray-300 p-4">
-        <DragDrop onFilesDrop={handleFilesDrop} />
-      </div>
+    <div className="min-h-screen p-8">
+      <h1 className="text-3xl font-bold mb-8 text-center">Image Outpainting App</h1>
       
-      {/* Right side: Gallery panel */}
-      <div className="overflow-y-auto p-4">
-        <h2 className="text-xl font-semibold mb-4">Results Gallery</h2>
-        <Gallery 
-          processingImages={processingImages}
-          completedImages={completedImages}
-        />
-      </div>
+      {/* Drag & Drop Area */}
+      <DragDrop onFilesDrop={handleFiles} />
+      
+      {/* Processing Files */}
+      {files.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold mb-4">Processing Files</h2>
+          <div className="space-y-4">
+            {files.map((file, index) => (
+              <div key={`${file.name}-${index}`} className="p-4 border rounded">
+                <ImageProcessor 
+                  file={file} 
+                  onProcessed={handleProcessed}
+                  onError={(message) => handleError(message, file)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Processed Images Gallery */}
+      {processedImages.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold mb-4">Processed Images</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {processedImages.map((image) => (
+              <div key={image.id} className="border rounded overflow-hidden">
+                <img 
+                  src={image.framePath} 
+                  alt={image.originalName}
+                  className="w-full h-auto"
+                />
+                <div className="p-3">
+                  <p className="text-sm">{image.originalName}</p>
+                  <p className="text-xs text-gray-500">
+                    Status: {image.status.replace('_', ' ')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Errors */}
+      {errors.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold mb-4 text-red-600">Errors</h2>
+          <div className="space-y-2">
+            {errors.map((error, index) => (
+              <div key={index} className="p-3 bg-red-50 border border-red-200 rounded">
+                <p className="text-red-700">
+                  {error.file ? `Error processing ${error.file}: ` : ''}
+                  {error.message}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
